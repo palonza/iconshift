@@ -1,0 +1,13 @@
+pkgbase = iconshift-bin
+	pkgdesc = Universal icon resolver and theme generator for Linux desktop environments
+	pkgver = 1.1.0
+	pkgrel = 1
+	url = https://github.com/polook/iconshift
+	arch = x86_64
+	license = MIT
+	provides = iconshift
+	conflicts = iconshift
+	source = iconshift-1.1.0-linux-x86_64.tar.gz
+	sha256sums = 2dfe4d79a4b00e2967129760b2869dd7dcdc874ec96df925ed249d72ae6567e6
+
+pkgname = iconshift-bin

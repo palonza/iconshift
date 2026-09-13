@@ -324,15 +324,23 @@ Run IconShift from the source tree:
 uv run iconshift --help
 ```
 
+Build standalone executable:
+
+```bash
+make build
+make install
+```
+
 ### Automated Tests
 
 The repository includes scripts for running the test suite in an isolated KVM/libvirt virtual machine:
 
 ```bash
-./scripts/run_tests_in_vm.sh
+make test
+# or: ./scripts/test/run_tests_in_vm.sh
 ```
 
-See [`scripts/README.md`](scripts/README.md) for details about the virtualized test environment.
+See [`scripts/README.md`](scripts/README.md) for details about the virtualized test environment and build automation.
 
 ---
 

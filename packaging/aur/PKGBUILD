@@ -1,0 +1,23 @@
+# Maintainer: polook-arch
+pkgname=iconshift-bin
+pkgver=1.1.0
+pkgrel=1
+pkgdesc="Universal icon resolver and theme generator for Linux desktop environments"
+arch=('x86_64')
+url="https://github.com/polook/iconshift"
+license=('MIT')
+provides=('iconshift')
+conflicts=('iconshift')
+source=("iconshift-${pkgver}-linux-${arch}.tar.gz")
+sha256sums=('2dfe4d79a4b00e2967129760b2869dd7dcdc874ec96df925ed249d72ae6567e6')
+
+package() {
+    cd "${srcdir}/iconshift-${pkgver}-linux-${arch}"
+    install -Dm755 iconshift "${pkgdir}/usr/bin/iconshift"
+    if [[ -f README.md ]]; then
+        install -Dm644 README.md "${pkgdir}/usr/share/doc/${pkgname}/README.md"
+    fi
+    if [[ -f LICENSE ]]; then
+        install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+    fi
+}
