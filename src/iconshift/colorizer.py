@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 import re
+import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from pathlib import Path
 
@@ -171,11 +172,104 @@ class TwoToneStrategy(ColoringStrategy):
             return self.primary_color
 
 
-class AdaptiveDominantStrategy(ColoringStrategy):
-    """Adaptive coloring strategy based on the dominant and secondary colors of an SVG.
+def analyze_base_and_symbol_colors(content: str) -> tuple[str | None, str | None]:
+    """Analyzes the SVG vector shapes to identify the base container and foreground symbols.
 
-    Identifies the primary visual container/background (dominant color) and inner details/glyphs
-    (secondary color), preserving contrast polarity and mapping to the ACYLS theme palette.
+    Filters out defs, clipPaths, masks, and low-opacity guide lines (< 0.2).
+    Returns (base_color_hex, symbol_color_hex).
+    """
+    try:
+        root = ET.fromstring(content)
+    except Exception:
+        return None, None
+
+    defs_tags = {"defs", "clippath", "mask"}
+    ignored = set()
+    for el in root.iter():
+        if el.tag.split("}")[-1].lower() in defs_tags:
+            for c in el.iter():
+                ignored.add(c)
+
+    shapes: list[tuple[str, bool]] = []
+    for el in root.iter():
+        if el in ignored:
+            continue
+        tag = el.tag.split("}")[-1].lower()
+        if tag not in {"path", "rect", "circle", "ellipse", "polygon", "polyline", "g"}:
+            continue
+
+        st = el.attrib.get("style", "")
+        op = el.attrib.get("opacity", "1")
+        m_op = re.search(r"opacity:\s*([0-9.]+)", st)
+        if m_op:
+            op = m_op.group(1)
+        try:
+            if float(op) < 0.2:
+                continue
+        except ValueError:
+            pass
+
+        fill = el.attrib.get("fill")
+        m_fill = re.search(r"fill:\s*(#[0-9a-fA-F]{3,6}|rgb\([^\)]+\)|rgba\([^\)]+\))", st)
+        if m_fill:
+            fill = m_fill.group(1)
+
+        if fill and fill != "none" and not fill.startswith("url("):
+            rgb = parse_color_to_rgb(fill)
+            if rgb is not None:
+                w = el.attrib.get("width")
+                h = el.attrib.get("height")
+                d = el.attrib.get("d", "")
+                is_large = False
+                if w and h:
+                    try:
+                        if float(w) >= 50 and float(h) >= 50:
+                            is_large = True
+                    except ValueError:
+                        pass
+                if not is_large and any(k in d for k in [" 88 ", " 80 ", " 320 ", " 408 ", " 104 ", " 112 ", " 128 "]):
+                    is_large = True
+                shapes.append((rgb_to_hex(*rgb), is_large))
+
+    if not shapes:
+        return None, None
+
+    # Base shape is the first large shape or first visible shape
+    base = None
+    for c, is_large in shapes:
+        if is_large:
+            base = c
+            break
+    if not base:
+        base = shapes[0][0]
+
+    base_rgb = parse_color_to_rgb(base)
+    if base_rgb is None:
+        return None, None
+
+    # Symbol is the shape with maximum perceptual contrast from base
+    best_sym = None
+    max_dist = -1.0
+    for c, _ in shapes:
+        c_rgb = parse_color_to_rgb(c)
+        if c_rgb is not None:
+            dist = color_distance(base_rgb, c_rgb)
+            if dist > max_dist:
+                max_dist = dist
+                best_sym = c
+
+    if max_dist < 40.0:
+        best_sym = None
+
+    return base, best_sym
+
+
+class AdaptiveDominantStrategy(ColoringStrategy):
+    """Adaptive coloring strategy based on the base container and foreground symbols of an SVG.
+
+    Identifies the primary visual container/background (base shape) and inner details/glyphs
+    (emblem/symbol), mapping the base shape to the ACYLS primary color and inner details
+    to the secondary color.
     """
 
     def __init__(
@@ -186,82 +280,32 @@ class AdaptiveDominantStrategy(ColoringStrategy):
     ) -> None:
         self.primary_color = primary_color.upper()
         self.secondary_color = secondary_color.upper()
-        self.dominant_color: str | None = None
-        self.secondary_color_src: str | None = None
-        self.split_by_luminance: bool = True
-        self.luminance_midpoint: float = 128.0
-        self.target_light: str = self.primary_color
-        self.target_dark: str = self.secondary_color
-        self.dominant_maps_to: str = self.primary_color
-        self.secondary_maps_to: str = self.secondary_color
+        self.base_color: str | None = None
+        self.symbol_color: str | None = None
 
         self._analyze(svg_content)
 
     def _analyze(self, content: str) -> None:
-        counter = extract_color_frequencies(content)
-        if not counter:
-            return
+        base, sym = analyze_base_and_symbol_colors(content)
+        if not base:
+            # Fallback to frequency counter if XML shapes weren't found
+            counter = extract_color_frequencies(content)
+            if not counter:
+                return
+            most_common = counter.most_common()
+            base = most_common[0][0]
+            base_rgb = hex_to_rgb(base)
+            for cand_hex, _ in most_common[1:]:
+                cand_rgb = hex_to_rgb(cand_hex)
+                if color_distance(base_rgb, cand_rgb) >= 40.0:
+                    sym = cand_hex
+                    break
 
-        most_common = counter.most_common()
-        dom_hex, _ = most_common[0]
-        self.dominant_color = dom_hex
-        dom_rgb = hex_to_rgb(dom_hex)
-        dom_lum = get_luminance(*dom_rgb)
-
-        # Look for the most frequent secondary color with sufficient perceptual difference
-        sec_hex: str | None = None
-        sec_rgb: tuple[int, int, int] | None = None
-        sec_lum: float | None = None
-
-        for cand_hex, _ in most_common[1:]:
-            cand_rgb = hex_to_rgb(cand_hex)
-            cand_lum = get_luminance(*cand_rgb)
-            lum_diff = abs(cand_lum - dom_lum)
-            dist = color_distance(dom_rgb, cand_rgb)
-            if lum_diff >= 25.0 or dist >= 45.0:
-                sec_hex = cand_hex
-                sec_rgb = cand_rgb
-                sec_lum = cand_lum
-                break
-
-        # Theme target light/dark assignment
-        p_rgb = hex_to_rgb(self.primary_color)
-        s_rgb = hex_to_rgb(self.secondary_color)
-        p_lum = get_luminance(*p_rgb)
-        s_lum = get_luminance(*s_rgb)
-
-        self.target_light = self.primary_color if p_lum >= s_lum else self.secondary_color
-        self.target_dark = self.secondary_color if s_lum <= p_lum else self.primary_color
-
-        if sec_hex is None or sec_rgb is None or sec_lum is None:
-            # Flat single-tone icon: everything maps to theme primary
-            self.dominant_maps_to = self.primary_color
-            self.secondary_maps_to = self.primary_color
-            self.split_by_luminance = False
-            return
-
-        self.secondary_color_src = sec_hex
-
-        lum_diff = abs(dom_lum - sec_lum)
-        if lum_diff >= 20.0:
-            self.split_by_luminance = True
-            self.luminance_midpoint = (dom_lum + sec_lum) / 2.0
-            if dom_lum < sec_lum:
-                # Dominant is darker than secondary (e.g. Console dark card, light prompt)
-                self.dominant_maps_to = self.target_dark
-                self.secondary_maps_to = self.target_light
-            else:
-                # Dominant is lighter than secondary (e.g. Characters light sheet, dark letters)
-                self.dominant_maps_to = self.target_light
-                self.secondary_maps_to = self.target_dark
-        else:
-            # Different hue with close luminance: split by Euclidean distance
-            self.split_by_luminance = False
-            self.dominant_maps_to = self.target_light
-            self.secondary_maps_to = self.target_dark
+        self.base_color = base
+        self.symbol_color = sym
 
     def map_color(self, hex_or_rgb: str) -> str:
-        if self.dominant_color is None or self.secondary_color_src is None:
+        if not self.base_color or not self.symbol_color:
             return self.primary_color
 
         try:
@@ -269,15 +313,15 @@ class AdaptiveDominantStrategy(ColoringStrategy):
             if rgb is None:
                 return self.primary_color
 
-            if self.split_by_luminance:
-                lum = get_luminance(*rgb)
-                return self.target_light if lum >= self.luminance_midpoint else self.target_dark
-            else:
-                dom_rgb = hex_to_rgb(self.dominant_color)
-                sec_rgb = hex_to_rgb(self.secondary_color_src)
-                d_dom = color_distance(rgb, dom_rgb)
-                d_sec = color_distance(rgb, sec_rgb)
-                return self.dominant_maps_to if d_dom <= d_sec else self.secondary_maps_to
+            base_rgb = parse_color_to_rgb(self.base_color)
+            sym_rgb = parse_color_to_rgb(self.symbol_color)
+            if base_rgb is None or sym_rgb is None:
+                return self.primary_color
+
+            d_base = color_distance(rgb, base_rgb)
+            d_sym = color_distance(rgb, sym_rgb)
+
+            return self.primary_color if d_base <= d_sym else self.secondary_color
         except Exception:
             return self.primary_color
 

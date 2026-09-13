@@ -90,9 +90,9 @@ def test_adaptive_dominant_strategy_dark_background():
         primary_color="#A0A0A0",
         secondary_color="#404040",
     )
-    # Dark container gets secondary (dark), light prompt gets primary (light)
-    assert strat.map_color("#241F31") == "#404040"
-    assert strat.map_color("#62C9EA") == "#A0A0A0"
+    # Dark container is dominant -> gets primary (#A0A0A0), light prompt is secondary -> gets secondary (#404040)
+    assert strat.map_color("#241F31") == "#A0A0A0"
+    assert strat.map_color("#62C9EA") == "#404040"
 
 
 def test_adaptive_dominant_strategy_light_background():
