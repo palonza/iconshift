@@ -51,7 +51,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     scan_parser.add_argument(
         "--format",
-        choices=["table", "tsv", "csv", "json", "paths", "icons"],
+        choices=["table", "tsv", "csv", "json", "paths", "path", "icons", "icon"],
         default="table",
         help="Output format (default: table).",
     )
@@ -107,6 +107,18 @@ def create_parser() -> argparse.ArgumentParser:
         help="Enable two-tone mapping (light colors to primary, dark colors to secondary).",
     )
     gen_parser.add_argument(
+        "--monochrome",
+        "--flat",
+        action="store_true",
+        help="Force single-color flat monochrome mapping (all colors to primary).",
+    )
+    gen_parser.add_argument(
+        "--adaptive",
+        action="store_true",
+        default=True,
+        help="Enable adaptive dominant-color mapping (default).",
+    )
+    gen_parser.add_argument(
         "--output-dir",
         "-o",
         type=Path,
@@ -116,6 +128,12 @@ def create_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action="store_true",
         help="Simulate icon generation without writing any files to disk.",
+    )
+    gen_parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force regeneration / overwrite even if icon already exists in target theme.",
     )
 
     # 3. palette
@@ -146,7 +164,9 @@ def get_formatter(format_name: str) -> OutputFormatter:
         "csv": CsvFormatter(),
         "json": JsonFormatter(),
         "paths": PathOnlyFormatter(),
+        "path": PathOnlyFormatter(),
         "icons": IconOnlyFormatter(),
+        "icon": IconOnlyFormatter(),
     }
     return formatters.get(format_name, TableFormatter())
 
@@ -181,8 +201,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 color=args.color,
                 secondary_color=args.secondary_color,
                 two_tone=args.two_tone,
+                monochrome=args.monochrome,
                 output_dir=args.output_dir,
                 dry_run=args.dry_run,
+                force=args.force,
             )
             return cmd.execute()
 

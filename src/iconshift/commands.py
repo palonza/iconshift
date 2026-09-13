@@ -106,8 +106,11 @@ class GenerateCommand:
         color: str | None = None,
         secondary_color: str | None = None,
         two_tone: bool = False,
+        monochrome: bool = False,
+        mode: str = "adaptive",
         output_dir: Path | None = None,
         dry_run: bool = False,
+        force: bool = False,
         resolver: IconResolver | None = None,
         scanner: DesktopScanner | None = None,
     ) -> None:
@@ -119,7 +122,10 @@ class GenerateCommand:
         self.color = color
         self.secondary_color = secondary_color
         self.two_tone = two_tone
+        self.monochrome = monochrome
+        self.mode = mode
         self.dry_run = dry_run
+        self.force = force
 
         self.resolver = resolver if resolver is not None else IconResolver(target_theme=theme)
         self.scanner = scanner if scanner is not None else DesktopScanner(resolver=self.resolver)
@@ -144,10 +150,19 @@ class GenerateCommand:
         if not secondary:
             secondary = "#404040"
 
+        effective_mode = "adaptive"
+        if self.monochrome:
+            effective_mode = "monochrome"
+        elif self.two_tone:
+            effective_mode = "two_tone"
+        elif self.mode:
+            effective_mode = self.mode
+
         config = ColorConfig(
             primary=primary,
             secondary=secondary,
             two_tone=self.two_tone,
+            mode=effective_mode,
         )
         pipeline = SvgPipeline(config=config)
 
@@ -164,8 +179,10 @@ class GenerateCommand:
                     dest = self.output_dir / p.name
                     targets_to_generate.append((p, dest))
                 else:
-                    # Treat as icon name
-                    resolved = self.resolver.resolve(line)
+                    # Treat as icon name, resolve from source themes
+                    resolved = self.resolver.resolve(line, skip_target_theme=True)
+                    if not (resolved.resolved_path and resolved.resolved_path.is_file()):
+                        resolved = self.resolver.resolve(line)
                     if resolved.resolved_path and resolved.resolved_path.is_file():
                         base_name = Path(line).name
                         if not base_name.endswith(".svg"):
@@ -182,7 +199,9 @@ class GenerateCommand:
 
         # Case 3: Specific icon name provided
         elif self.icon_name is not None:
-            resolved = self.resolver.resolve(self.icon_name)
+            resolved = self.resolver.resolve(self.icon_name, skip_target_theme=True)
+            if not (resolved.resolved_path and resolved.resolved_path.is_file()):
+                resolved = self.resolver.resolve(self.icon_name)
             if resolved.resolved_path and resolved.resolved_path.is_file():
                 base_name = Path(self.icon_name).name
                 if not base_name.endswith(".svg"):
@@ -196,19 +215,36 @@ class GenerateCommand:
                 )
                 return 1
 
-        # Case 4: All missing icons
+        # Case 4: All missing icons (or all icons with --force)
         elif self.all_missing:
-            missing_items = self.scanner.scan_and_resolve(missing_only=True)
-            for entry, resolved in missing_items:
-                if resolved.resolved_path and resolved.resolved_path.is_file():
-                    # Only vector SVG icons can be recolored for the scalable theme
-                    if not resolved.resolved_path.name.lower().endswith(".svg"):
+            if self.force:
+                entries = self.scanner.scan_desktop_entries()
+                seen_icons: set[str] = set()
+                for entry in entries:
+                    if entry.icon_name in seen_icons:
                         continue
-                    base_name = Path(entry.icon_name).name
-                    if not base_name.endswith(".svg"):
-                        base_name = f"{base_name}.svg"
-                    dest = self.output_dir / base_name
-                    targets_to_generate.append((resolved.resolved_path, dest))
+                    seen_icons.add(entry.icon_name)
+                    resolved = self.resolver.resolve(entry.icon_name, skip_target_theme=True)
+                    if resolved.resolved_path and resolved.resolved_path.is_file():
+                        if not resolved.resolved_path.name.lower().endswith(".svg"):
+                            continue
+                        base_name = Path(entry.icon_name).name
+                        if not base_name.endswith(".svg"):
+                            base_name = f"{base_name}.svg"
+                        dest = self.output_dir / base_name
+                        targets_to_generate.append((resolved.resolved_path, dest))
+            else:
+                missing_items = self.scanner.scan_and_resolve(missing_only=True)
+                for entry, resolved in missing_items:
+                    if resolved.resolved_path and resolved.resolved_path.is_file():
+                        # Only vector SVG icons can be recolored for the scalable theme
+                        if not resolved.resolved_path.name.lower().endswith(".svg"):
+                            continue
+                        base_name = Path(entry.icon_name).name
+                        if not base_name.endswith(".svg"):
+                            base_name = f"{base_name}.svg"
+                        dest = self.output_dir / base_name
+                        targets_to_generate.append((resolved.resolved_path, dest))
 
         else:
             print(

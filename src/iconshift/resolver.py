@@ -335,7 +335,15 @@ class IconResolver:
             next_link=inherited_link,
         )
         self.chain_head: ResolutionLink = AbsolutePathLink(next_link=target_link)
+        self.source_chain_head: ResolutionLink = AbsolutePathLink(next_link=inherited_link)
 
-    def resolve(self, icon_name: str) -> ResolvedIcon:
-        """Resolves an icon by name through the configured chain."""
+    def resolve(self, icon_name: str, skip_target_theme: bool = False) -> ResolvedIcon:
+        """Resolves an icon by name through the configured chain.
+
+        If skip_target_theme is True, skips looking in the target theme and resolves
+        directly from inherited themes, pixmaps, or opt dirs.
+        """
+        if skip_target_theme:
+            return self.source_chain_head.resolve(icon_name)
         return self.chain_head.resolve(icon_name)
+

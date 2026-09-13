@@ -89,4 +89,13 @@ class ColorConfig:
     primary: str = "#A0A0A0"
     secondary: str = "#404040"
     two_tone: bool = False
+    mode: str = "adaptive"  # "adaptive", "two_tone", "monochrome"
     exceptions: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def effective_mode(self) -> str:
+        """Determines the effective coloring mode considering backwards compatibility."""
+        if self.two_tone:
+            return "two_tone"
+        return self.mode
+

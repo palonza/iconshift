@@ -31,6 +31,12 @@ def test_create_parser():
     assert args_gen.two_tone is True
     assert args_gen.dry_run is True
 
+    args_gen_mono = parser.parse_args(["generate", "--monochrome"])
+    assert args_gen_mono.monochrome is True
+
+    args_gen_flat = parser.parse_args(["generate", "--flat"])
+    assert args_gen_flat.monochrome is True
+
     # palette parser
     args_pal = parser.parse_args(["palette", "--theme", "ACYLS", "--limit", "10"])
     assert args_pal.subcommand == "palette"
