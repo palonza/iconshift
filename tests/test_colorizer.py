@@ -161,3 +161,41 @@ def test_svg_pipeline_colorize_file(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
         pipeline.colorize_file(tmp_path / "missing.svg", dst)
 
+
+def test_parse_path_bbox():
+    from iconshift.colorizer import parse_path_bbox
+
+    # Simple path with horizontal and vertical lines
+    d = "m 32 8 h 64 v 90 h -64 z"
+    bbox = parse_path_bbox(d)
+    assert bbox is not None
+    min_x, min_y, max_x, max_y = bbox
+    assert min_x == 32.0
+    assert min_y == 8.0
+    assert max_x == 96.0
+    assert max_y == 98.0
+
+
+def test_analyze_base_and_symbol_with_gradients_and_strokes():
+    from iconshift.colorizer import analyze_base_and_symbol_colors
+
+    # Simulates an icon with gradient card and stroke ring (like Settings/Characters)
+    svg_gradient_icon = (
+        '<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
+        '  <defs>\n'
+        '    <linearGradient id="grad1">\n'
+        '      <stop offset="0" stop-color="#F6F5F4"/>\n'
+        '      <stop offset="1" stop-color="#DEDDDA"/>\n'
+        '    </linearGradient>\n'
+        '  </defs>\n'
+        '  <rect width="120" height="120" fill="url(#grad1)"/>\n'
+        '  <path d="M 40 40 L 80 80" stroke="#404040" stroke-width="8" fill="none"/>\n'
+        '</svg>'
+    )
+    base, sym = analyze_base_and_symbol_colors(svg_gradient_icon)
+    assert base is not None
+    assert sym is not None
+    # Base is gradient average (~ #EAE9E7), symbol is stroke (#404040)
+    assert sym == "#404040"
+
+

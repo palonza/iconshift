@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections import Counter
+import math
 import re
+from typing import Any
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -172,10 +174,179 @@ class TwoToneStrategy(ColoringStrategy):
             return self.primary_color
 
 
+def parse_path_bbox(d: str) -> tuple[float, float, float, float] | None:
+    """Parses SVG path data commands to compute an approximate bounding box (min_x, min_y, max_x, max_y)."""
+    tokens = re.findall(r"([a-zA-Z])|([-+]?(?:[0-9]*\.[0-9]+|[0-9]+)(?:[eE][-+]?[0-9]+)?)", d)
+    if not tokens:
+        return None
+
+    cur_x, cur_y = 0.0, 0.0
+    min_x, max_x = float("inf"), float("-inf")
+    min_y, max_y = float("inf"), float("-inf")
+
+    def update_bounds(x: float, y: float) -> None:
+        nonlocal min_x, max_x, min_y, max_y
+        min_x, max_x = min(min_x, x), max(max_x, x)
+        min_y, max_y = min(min_y, y), max(max_y, y)
+
+    items = [(True, c) if c else (False, float(n)) for c, n in tokens]
+    idx, total = 0, len(items)
+    cmd = ""
+
+    while idx < total:
+        is_cmd, val = items[idx]
+        if is_cmd:
+            cmd = str(val)
+            idx += 1
+
+        c_low = cmd.lower()
+        is_rel = cmd.islower()
+        nums: list[float] = []
+        while idx < total and not items[idx][0]:
+            nums.append(float(items[idx][1]))
+            idx += 1
+
+        if c_low == "z":
+            continue
+        elif c_low == "h":
+            for n in nums:
+                cur_x = cur_x + n if is_rel else n
+                update_bounds(cur_x, cur_y)
+        elif c_low == "v":
+            for n in nums:
+                cur_y = cur_y + n if is_rel else n
+                update_bounds(cur_x, cur_y)
+        elif c_low in ("m", "l", "t"):
+            for j in range(0, len(nums) - 1, 2):
+                nx, ny = nums[j], nums[j + 1]
+                cur_x = cur_x + nx if is_rel else nx
+                cur_y = cur_y + ny if is_rel else ny
+                update_bounds(cur_x, cur_y)
+        elif c_low in ("s", "q"):
+            for j in range(0, len(nums) - 3, 4):
+                nx, ny = nums[j + 2], nums[j + 3]
+                cur_x = cur_x + nx if is_rel else nx
+                cur_y = cur_y + ny if is_rel else ny
+                update_bounds(cur_x, cur_y)
+        elif c_low == "c":
+            for j in range(0, len(nums) - 5, 6):
+                nx, ny = nums[j + 4], nums[j + 5]
+                cur_x = cur_x + nx if is_rel else nx
+                cur_y = cur_y + ny if is_rel else ny
+                update_bounds(cur_x, cur_y)
+        elif c_low == "a":
+            for j in range(0, len(nums) - 6, 7):
+                nx, ny = nums[j + 5], nums[j + 6]
+                cur_x = cur_x + nx if is_rel else nx
+                cur_y = cur_y + ny if is_rel else ny
+                update_bounds(cur_x, cur_y)
+
+    if min_x == float("inf"):
+        return None
+    return min_x, min_y, max_x, max_y
+
+
+def extract_gradient_colors(root: ET.Element) -> dict[str, tuple[int, int, int]]:
+    """Extracts representative average RGB colors from linear and radial gradients."""
+    grads: dict[str, list[tuple[int, int, int]]] = {}
+    hrefs: dict[str, str] = {}
+
+    for el in root.iter():
+        tag = el.tag.split("}")[-1].lower()
+        if tag in ("lineargradient", "radialgradient"):
+            gid = el.attrib.get("id")
+            if not gid:
+                continue
+            href = el.attrib.get("{http://www.w3.org/1999/xlink}href") or el.attrib.get("href")
+            if href and href.startswith("#"):
+                hrefs[gid] = href[1:]
+
+            stops: list[tuple[int, int, int]] = []
+            for child in el:
+                ctag = child.tag.split("}")[-1].lower()
+                if ctag == "stop":
+                    c = child.attrib.get("stop-color")
+                    st = child.attrib.get("style", "")
+                    m_c = re.search(r"stop-color:\s*(#[0-9a-fA-F]{3,6}|rgb\([^\)]+\))", st)
+                    if m_c:
+                        c = m_c.group(1)
+                    if c:
+                        rgb = parse_color_to_rgb(c)
+                        if rgb:
+                            stops.append(rgb)
+            if stops:
+                grads[gid] = stops
+
+    resolved: dict[str, tuple[int, int, int]] = {}
+    for gid in list(grads.keys()) + list(hrefs.keys()):
+        cur = gid
+        visited: set[str] = set()
+        while cur in hrefs and cur not in grads and cur not in visited:
+            visited.add(cur)
+            cur = hrefs[cur]
+        if cur in grads:
+            stops = grads[cur]
+            avg_r = sum(s[0] for s in stops) // len(stops)
+            avg_g = sum(s[1] for s in stops) // len(stops)
+            avg_b = sum(s[2] for s in stops) // len(stops)
+            resolved[gid] = (avg_r, avg_g, avg_b)
+
+    return resolved
+
+
+def get_element_geometry(el: ET.Element) -> tuple[float, tuple[float, float, float, float] | None]:
+    """Estimates the visual rendered area and bounding box of an SVG element."""
+    tag = el.tag.split("}")[-1].lower()
+    if tag == "rect":
+        x = float(el.attrib.get("x", 0))
+        y = float(el.attrib.get("y", 0))
+        w = float(el.attrib.get("width", 0))
+        h = float(el.attrib.get("height", 0))
+        return w * h, (x, y, x + w, y + h)
+    elif tag == "circle":
+        cx = float(el.attrib.get("cx", 0))
+        cy = float(el.attrib.get("cy", 0))
+        r = float(el.attrib.get("r", 0))
+        return math.pi * r * r, (cx - r, cy - r, cx + r, cy + r)
+    elif tag == "ellipse":
+        cx = float(el.attrib.get("cx", 0))
+        cy = float(el.attrib.get("cy", 0))
+        rx = float(el.attrib.get("rx", 0))
+        ry = float(el.attrib.get("ry", 0))
+        return math.pi * rx * ry, (cx - rx, cy - ry, cx + rx, cy + ry)
+    elif tag == "path":
+        d = el.attrib.get("d", "")
+        bbox = parse_path_bbox(d)
+        if not bbox:
+            return 0.0, None
+        w = max(0.0, bbox[2] - bbox[0])
+        h = max(0.0, bbox[3] - bbox[1])
+        fill = el.attrib.get("fill", "")
+        st = el.attrib.get("style", "")
+        m_fill = re.search(r"fill:\s*([^;]+)", st)
+        if m_fill:
+            fill = m_fill.group(1).strip()
+        if fill == "none":
+            sw = 1.0
+            m_sw = re.search(r"stroke-width:\s*([0-9.]+)", st)
+            if m_sw:
+                sw = float(m_sw.group(1))
+            elif "stroke-width" in el.attrib:
+                try:
+                    sw = float(el.attrib["stroke-width"])
+                except ValueError:
+                    pass
+            perimeter = 2.0 * (w + h)
+            return perimeter * sw, bbox
+        return w * h * 0.8, bbox
+    return 0.0, None
+
+
 def analyze_base_and_symbol_colors(content: str) -> tuple[str | None, str | None]:
     """Analyzes the SVG vector shapes to identify the base container and foreground symbols.
 
-    Filters out defs, clipPaths, masks, and low-opacity guide lines (< 0.2).
+    Resolves linear/radial gradients, stroke-only shapes, and bounding box visual areas.
+    Identifies the visible base face (using document z-order and area) and foreground symbol.
     Returns (base_color_hex, symbol_color_hex).
     """
     try:
@@ -183,85 +354,140 @@ def analyze_base_and_symbol_colors(content: str) -> tuple[str | None, str | None
     except Exception:
         return None, None
 
+    grads = extract_gradient_colors(root)
     defs_tags = {"defs", "clippath", "mask"}
-    ignored = set()
+    ignored: set[ET.Element] = set()
     for el in root.iter():
         if el.tag.split("}")[-1].lower() in defs_tags:
             for c in el.iter():
                 ignored.add(c)
 
-    shapes: list[tuple[str, bool]] = []
+    parent_map = {c: p for p in root.iter() for c in p}
+
+    def get_attr(element: ET.Element, name: str) -> str:
+        cur: ET.Element | None = element
+        while cur is not None:
+            v = cur.attrib.get(name)
+            if v:
+                return v
+            st = cur.attrib.get("style", "")
+            m = re.search(name + r":\s*([^;]+)", st)
+            if m:
+                return m.group(1).strip()
+            cur = parent_map.get(cur)
+        return ""
+
+    shapes: list[dict[str, Any]] = []
+    z = 0
     for el in root.iter():
         if el in ignored:
             continue
         tag = el.tag.split("}")[-1].lower()
-        if tag not in {"path", "rect", "circle", "ellipse", "polygon", "polyline", "g"}:
+        if tag not in {"path", "rect", "circle", "ellipse", "polygon", "polyline"}:
             continue
 
-        st = el.attrib.get("style", "")
-        op = el.attrib.get("opacity", "1")
-        m_op = re.search(r"opacity:\s*([0-9.]+)", st)
-        if m_op:
-            op = m_op.group(1)
+        op = get_attr(el, "opacity") or "1"
         try:
             if float(op) < 0.2:
                 continue
         except ValueError:
             pass
 
-        fill = el.attrib.get("fill")
-        m_fill = re.search(r"fill:\s*(#[0-9a-fA-F]{3,6}|rgb\([^\)]+\)|rgba\([^\)]+\))", st)
-        if m_fill:
-            fill = m_fill.group(1)
+        # Color detection: fill takes precedence; if none, check stroke
+        fill = get_attr(el, "fill")
+        color_rgb: tuple[int, int, int] | None = None
 
-        if fill and fill != "none" and not fill.startswith("url("):
-            rgb = parse_color_to_rgb(fill)
-            if rgb is not None:
-                w = el.attrib.get("width")
-                h = el.attrib.get("height")
-                d = el.attrib.get("d", "")
-                is_large = False
-                if w and h:
-                    try:
-                        if float(w) >= 50 and float(h) >= 50:
-                            is_large = True
-                    except ValueError:
-                        pass
-                if not is_large and any(k in d for k in [" 88 ", " 80 ", " 320 ", " 408 ", " 104 ", " 112 ", " 128 "]):
-                    is_large = True
-                shapes.append((rgb_to_hex(*rgb), is_large))
+        if fill and fill != "none":
+            if fill.startswith("url(#"):
+                gid = fill[5:].rstrip(")")
+                color_rgb = grads.get(gid)
+            else:
+                color_rgb = parse_color_to_rgb(fill)
+        else:
+            stroke = get_attr(el, "stroke")
+            if stroke and stroke != "none":
+                if stroke.startswith("url(#"):
+                    gid = stroke[5:].rstrip(")")
+                    color_rgb = grads.get(gid)
+                else:
+                    color_rgb = parse_color_to_rgb(stroke)
+
+        if color_rgb is not None:
+            area, bbox = get_element_geometry(el)
+            z += 1
+            shapes.append({
+                "color": rgb_to_hex(*color_rgb),
+                "rgb": color_rgb,
+                "area": area,
+                "bbox": bbox,
+                "z": z,
+            })
 
     if not shapes:
         return None, None
 
-    # Base shape is the first large shape or first visible shape
-    base = None
-    for c, is_large in shapes:
-        if is_large:
-            base = c
-            break
-    if not base:
-        base = shapes[0][0]
+    area_by_color: dict[str, float] = {}
+    max_area_by_color: dict[str, float] = {}
+    latest_z_by_color: dict[str, int] = {}
 
-    base_rgb = parse_color_to_rgb(base)
+    for s in shapes:
+        c = s["color"]
+        area_by_color[c] = area_by_color.get(c, 0.0) + s["area"]
+        max_area_by_color[c] = max(max_area_by_color.get(c, 0.0), s["area"])
+        latest_z_by_color[c] = max(latest_z_by_color.get(c, 0), s["z"])
+
+    max_single_area = max(s["area"] for s in shapes)
+    large_colors = {
+        c for c, max_a in max_area_by_color.items()
+        if max_a >= max(1000.0, max_single_area * 0.4)
+    }
+
+    if large_colors:
+        base_color = max(large_colors, key=lambda col: latest_z_by_color[col])
+    else:
+        base_color = max(area_by_color.items(), key=lambda item: item[1])[0]
+
+    base_rgb = parse_color_to_rgb(base_color)
     if base_rgb is None:
         return None, None
 
-    # Symbol is the shape with maximum perceptual contrast from base
-    best_sym = None
-    max_dist = -1.0
-    for c, _ in shapes:
-        c_rgb = parse_color_to_rgb(c)
-        if c_rgb is not None:
+    # Pick foreground symbol: contrasting color with high visual prominence
+    best_sym: str | None = None
+    max_contrast_score = -1.0
+
+    for col, total_area in area_by_color.items():
+        if col == base_color:
+            continue
+        # Skip background container layers as symbol candidates
+        if col in large_colors and len(large_colors) > 1 and max_area_by_color[col] >= max_single_area * 0.4:
+            continue
+        c_rgb = parse_color_to_rgb(col)
+        if c_rgb is None:
+            continue
+        dist = color_distance(base_rgb, c_rgb)
+        if dist < 40.0:
+            continue
+        score = dist * math.log10(max(10.0, total_area))
+        if score > max_contrast_score:
+            max_contrast_score = score
+            best_sym = col
+
+    # Fallback if no symbol passed the container filter
+    if not best_sym:
+        for col, total_area in area_by_color.items():
+            if col == base_color:
+                continue
+            c_rgb = parse_color_to_rgb(col)
+            if c_rgb is None:
+                continue
             dist = color_distance(base_rgb, c_rgb)
-            if dist > max_dist:
-                max_dist = dist
-                best_sym = c
+            if dist >= 40.0:
+                score = dist * math.log10(max(10.0, total_area))
+                if score > max_contrast_score:
+                    max_contrast_score = score
+                    best_sym = col
 
-    if max_dist < 40.0:
-        best_sym = None
-
-    return base, best_sym
+    return base_color, best_sym
 
 
 class AdaptiveDominantStrategy(ColoringStrategy):

@@ -105,3 +105,23 @@ def test_resolver_chain_all_links(mock_env):
     assert res_ghost.source == ResolutionSource.NOT_FOUND
     assert res_ghost.resolved_path is None
     assert res_ghost.is_resolved is False
+
+
+def test_resolver_aliases(mock_env):
+    # In mock_env, ACYLS exists in icon_dirs[1] (usr/share/icons).
+    pref_svg = mock_env["icon_dirs"][1] / "ACYLS/scalable/apps/preferences-system.svg"
+    pref_svg.write_text('<svg viewBox="0 0 16 16"/>', encoding="utf-8")
+
+    resolver = IconResolver(
+        target_theme="ACYLS",
+        icon_dirs=mock_env["icon_dirs"],
+        pixmap_dirs=mock_env["pixmap_dirs"],
+        opt_dirs=mock_env["opt_dirs"],
+    )
+
+    # Resolving org.gnome.Settings should resolve via preferences-system alias in ACYLS!
+    res = resolver.resolve("org.gnome.Settings")
+    assert res.is_in_target_theme is True
+    assert res.source == ResolutionSource.TARGET_THEME
+    assert res.resolved_path == pref_svg
+

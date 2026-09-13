@@ -12,6 +12,91 @@ from iconshift.models import ResolutionSource, ResolvedIcon, ThemeMetadata
 
 SUPPORTED_EXTENSIONS = (".svg", ".png", ".xpm")
 
+# Standard Freedesktop / GNOME RDNN application aliases
+STANDARD_ICON_ALIASES: dict[str, tuple[str, ...]] = {
+    # System Settings & Preferences
+    "org.gnome.Settings": ("gnome-settings", "preferences-system", "gnome-control-center"),
+    "gnome-control-center": ("gnome-settings", "preferences-system", "org.gnome.Settings"),
+    "preferences-system": ("gnome-settings", "org.gnome.Settings"),
+
+    # Calculator
+    "org.gnome.Calculator": ("gnome-calculator", "accessories-calculator"),
+    "accessories-calculator": ("gnome-calculator", "org.gnome.Calculator"),
+    "gnome-calculator": ("accessories-calculator", "org.gnome.Calculator"),
+
+    # Terminal / Console
+    "org.gnome.Console": ("utilities-terminal", "gnome-terminal", "terminal"),
+    "org.gnome.Terminal": ("utilities-terminal", "gnome-terminal", "terminal"),
+    "utilities-terminal": ("gnome-terminal", "terminal", "org.gnome.Console"),
+
+    # Camera / Snapshot
+    "org.gnome.Snapshot": ("camera-photo", "camera", "accessories-camera"),
+    "camera-photo": ("camera", "org.gnome.Snapshot"),
+
+    # Characters
+    "org.gnome.Characters": ("gnome-characters", "accessories-character-map", "gucharmap", "character-set"),
+    "accessories-character-map": ("gnome-characters", "gucharmap", "org.gnome.Characters"),
+
+    # Contacts
+    "org.gnome.Contacts": ("address-book-new", "contact-new", "gnome-contacts"),
+
+    # Files / File Manager
+    "org.gnome.Nautilus": ("system-file-manager", "nautilus"),
+
+    # Text Editor
+    "org.gnome.TextEditor": ("accessories-text-editor", "text-editor", "gedit"),
+    "org.gnome.gedit": ("accessories-text-editor", "text-editor", "gedit"),
+
+    # System Monitor
+    "org.gnome.SystemMonitor": ("utilities-system-monitor", "gnome-system-monitor"),
+
+    # Software / App Store
+    "org.gnome.Software": ("software-store", "system-software-install", "gnome-software"),
+
+    # Clocks
+    "org.gnome.clocks": ("clocks", "preferences-system-time"),
+    "org.gnome.Clocks": ("clocks", "preferences-system-time"),
+
+    # Calendar
+    "org.gnome.Calendar": ("calendar", "x-office-calendar"),
+
+    # Music / Audio
+    "org.gnome.Music": ("media-audio-player", "gnome-music"),
+
+    # Weather
+    "org.gnome.Weather": ("weather", "gnome-weather"),
+
+    # Maps
+    "org.gnome.Maps": ("maps", "gnome-maps"),
+
+    # Document Viewer / Evince
+    "org.gnome.Evince": ("x-office-document", "document-viewer", "evince"),
+    "org.gnome.Papers": ("x-office-document", "document-viewer", "evince"),
+}
+
+
+def get_icon_name_candidates(icon_name: str) -> tuple[str, ...]:
+    """Returns candidate icon names including standard Freedesktop/RDNN aliases."""
+    candidates = [icon_name]
+    aliases = STANDARD_ICON_ALIASES.get(icon_name, ())
+    for a in aliases:
+        if a not in candidates:
+            candidates.append(a)
+
+    base = icon_name
+    for ext in SUPPORTED_EXTENSIONS:
+        if base.endswith(ext):
+            base = base[: -len(ext)]
+            break
+    if base != icon_name:
+        if base not in candidates:
+            candidates.append(base)
+        for a in STANDARD_ICON_ALIASES.get(base, ()):
+            if a not in candidates:
+                candidates.append(a)
+
+    return tuple(candidates)
+
 
 def get_default_icon_dirs() -> tuple[Path, ...]:
     """Default directories where icon themes are installed in Linux."""
@@ -189,17 +274,19 @@ class TargetThemeLink(ResolutionLink):
         self.theme_dirs = theme_reader.get_theme_paths(theme_name)
 
     def try_resolve(self, icon_name: str) -> ResolvedIcon | None:
-        for theme_dir in self.theme_dirs:
-            found = find_icon_in_directory(theme_dir, icon_name)
-            if found is not None:
-                fmt = found.suffix.lstrip(".").lower()
-                return ResolvedIcon(
-                    icon_name=icon_name,
-                    source=ResolutionSource.TARGET_THEME,
-                    source_theme=self.theme_name,
-                    resolved_path=found,
-                    format=fmt,
-                )
+        candidates = get_icon_name_candidates(icon_name)
+        for cand in candidates:
+            for theme_dir in self.theme_dirs:
+                found = find_icon_in_directory(theme_dir, cand)
+                if found is not None:
+                    fmt = found.suffix.lstrip(".").lower()
+                    return ResolvedIcon(
+                        icon_name=icon_name,
+                        source=ResolutionSource.TARGET_THEME,
+                        source_theme=self.theme_name,
+                        resolved_path=found,
+                        format=fmt,
+                    )
         return None
 
 
@@ -217,19 +304,21 @@ class InheritedThemesLink(ResolutionLink):
         self.theme_reader = theme_reader
 
     def try_resolve(self, icon_name: str) -> ResolvedIcon | None:
+        candidates = get_icon_name_candidates(icon_name)
         for theme in self.inheritance_chain:
             theme_dirs = self.theme_reader.get_theme_paths(theme)
-            for theme_dir in theme_dirs:
-                found = find_icon_in_directory(theme_dir, icon_name)
-                if found is not None:
-                    fmt = found.suffix.lstrip(".").lower()
-                    return ResolvedIcon(
-                        icon_name=icon_name,
-                        source=ResolutionSource.INHERITED_THEME,
-                        source_theme=theme,
-                        resolved_path=found,
-                        format=fmt,
-                    )
+            for cand in candidates:
+                for theme_dir in theme_dirs:
+                    found = find_icon_in_directory(theme_dir, cand)
+                    if found is not None:
+                        fmt = found.suffix.lstrip(".").lower()
+                        return ResolvedIcon(
+                            icon_name=icon_name,
+                            source=ResolutionSource.INHERITED_THEME,
+                            source_theme=theme,
+                            resolved_path=found,
+                            format=fmt,
+                        )
         return None
 
 
@@ -245,18 +334,20 @@ class PixmapsLink(ResolutionLink):
         self.pixmap_dirs = tuple(pixmap_dirs) if pixmap_dirs is not None else get_default_pixmap_dirs()
 
     def try_resolve(self, icon_name: str) -> ResolvedIcon | None:
-        for pixmap_dir in self.pixmap_dirs:
-            if not pixmap_dir.is_dir():
-                continue
-            found = find_icon_in_directory(pixmap_dir, icon_name)
-            if found is not None:
-                fmt = found.suffix.lstrip(".").lower()
-                return ResolvedIcon(
-                    icon_name=icon_name,
-                    source=ResolutionSource.PIXMAPS,
-                    resolved_path=found,
-                    format=fmt,
-                )
+        candidates = get_icon_name_candidates(icon_name)
+        for cand in candidates:
+            for pixmap_dir in self.pixmap_dirs:
+                if not pixmap_dir.is_dir():
+                    continue
+                found = find_icon_in_directory(pixmap_dir, cand)
+                if found is not None:
+                    fmt = found.suffix.lstrip(".").lower()
+                    return ResolvedIcon(
+                        icon_name=icon_name,
+                        source=ResolutionSource.PIXMAPS,
+                        resolved_path=found,
+                        format=fmt,
+                    )
         return None
 
 

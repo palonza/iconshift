@@ -1,0 +1,20 @@
+{
+  "antigravity.agent.permissionMode": "auto-approve",
+  "antigravity.permissions.allow": [
+    "command(git *)",
+    "command(bash *)",
+    "command(npm *)",
+    "command(dotnet *)",
+    "write_file(${workspaceFolder}/**)",
+    "read_file(${workspaceFolder}/**)"
+  ],
+  "permissions": {
+    "allow": [
+      "command(*)",
+      "write_file(./**)",
+      "read_file(./**)"
+    ],
+    "ask": [],
+    "deny": []
+  }
+}
