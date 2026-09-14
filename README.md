@@ -329,14 +329,17 @@ iconshift generate --icon org.gnome.Snapshot --color "#00FFCC"
 
 ### Download and Adapt Web SVG Icons (e.g. Bootstrap Icons to ACYLS)
 If an application only provides raster PNG icons, you can fetch its official vector glyph from icon libraries (such as [Bootstrap Icons](https://icons.getbootstrap.com/)), normalize transparent backgrounds, and install it into your ACYLS theme:
+
 ```bash
 # 1. Download the raw SVG from Bootstrap Icons into Downloads
 curl -sL https://raw.githubusercontent.com/twbs/icons/main/icons/openai.svg -o ~/Downloads/chatgpt.svg
+
 # 2. Normalize white fills to 'none' (transparent) and black/currentColor to #000000
 sed -e 's/fill="#ffffff"/fill="none"/gI' \
     -e 's/fill="white"/fill="none"/gI' \
     -e 's/fill="currentColor"/fill="#000000"/g' \
     ~/Downloads/chatgpt.svg > /tmp/chatgpt.svg
+
 # 3. Generate and recolor using IconShift
 iconshift generate \
   --file /tmp/chatgpt.svg \
@@ -347,8 +350,6 @@ iconshift generate \
 gtk-update-icon-cache -f ~/.local/share/icons/ACYLS
 
 ### Custom output directory
-
-```bash
 iconshift generate --all --output-dir ~/my-icon-theme/
 ```
 
