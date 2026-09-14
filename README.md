@@ -522,6 +522,11 @@ See [`scripts/README.md`](scripts/README.md) for details about the virtualized t
 
 ---
 
+## Future improvements
+
+make a index-theme more intelligent.
+
+---
 ## Safety
 
 IconShift is designed to minimize changes to system-managed resources.
