@@ -310,11 +310,41 @@ iconshift generate --icon org.gnome.Snapshot
 iconshift generate --file /usr/share/icons/hicolor/scalable/apps/vlc.svg
 ```
 
+### Convert an external SVG icon with custom two-tone palette
+
+You can explicitly transform any third-party or system SVG asset (such as an application icon from Papirus) and install it into your user theme with custom two-tone depth:
+
+```bash
+iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/vscode.svg \
+  --two-tone \
+  --color "#ECECEC" \
+  --secondary-color "#8A8A8A"
+  
 ### Custom monochrome color
 
 ```bash
 iconshift generate --icon org.gnome.Snapshot --color "#00FFCC"
 ```
+
+### Download and Adapt Web SVG Icons (e.g. Bootstrap Icons to ACYLS)
+If an application only provides raster PNG icons, you can fetch its official vector glyph from icon libraries (such as [Bootstrap Icons](https://icons.getbootstrap.com/)), normalize transparent backgrounds, and install it into your ACYLS theme:
+```bash
+# 1. Download the raw SVG from Bootstrap Icons into Downloads
+curl -sL https://raw.githubusercontent.com/twbs/icons/main/icons/openai.svg -o ~/Downloads/chatgpt.svg
+# 2. Normalize white fills to 'none' (transparent) and black/currentColor to #000000
+sed -e 's/fill="#ffffff"/fill="none"/gI' \
+    -e 's/fill="white"/fill="none"/gI' \
+    -e 's/fill="currentColor"/fill="#000000"/g' \
+    ~/Downloads/chatgpt.svg > /tmp/chatgpt.svg
+# 3. Generate and recolor using IconShift
+iconshift generate \
+  --file /tmp/chatgpt.svg \
+  --color "#8A8A8A" \
+  --monochrome \
+  --force
+# 4. Refresh the user icon cache
+gtk-update-icon-cache -f ~/.local/share/icons/ACYLS
 
 ### Custom output directory
 
@@ -352,6 +382,79 @@ Display the 30 most frequent colors:
 
 ```bash
 iconshift palette --theme ACYLS --limit 30
+```
+
+---
+
+## Other Utilities
+
+Individual commands to generate svg from others themes
+
+```bash
+
+# 1. QtScrcpy
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/qtscrcpy.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 2. Virtual Machine Manager
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/virt-manager.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 3. OpenJDK Java 11
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/java11-jdk.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 4. Antigravity
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/antigravity.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 5. Tor Browser
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/tor-browser.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 6. Microsoft Edge
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/microsoft-edge.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 7. OpenJDK Java 17
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/java17-openjdk.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 8. Stoken GUI (Software Token)
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/stoken-gui.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 9. Mullvad VPN
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/mullvad-vpn.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+# 10. Postman
+uv run iconshift generate \
+  --file /usr/share/icons/Papirus/48x48/apps/postman.svg \
+  --two-tone --color "#ECECEC" --secondary-color "#8A8A8A"
+
+
+# Vincular qtscrcpy -> scrcpy (para el lanzador scrcpy.desktop)
+ln -sf qtscrcpy.svg ~/.local/share/icons/ACYLS/scalable/apps/scrcpy.svg
+
+# Vincular antigravity -> antigravity-ide (para antigravity-ide.desktop)
+ln -sf antigravity.svg ~/.local/share/icons/ACYLS/scalable/apps/antigravity-ide.svg
+
+# Vincular tor-browser -> org.torproject.torbrowser-launcher (para Tor Browser)
+ln -sf tor-browser.svg ~/.local/share/icons/ACYLS/scalable/apps/org.torproject.torbrowser-launcher.svg
+
+# Vincular java17 -> java26 (para los accesos de Java 26 en el sistema)
+ln -sf java17-openjdk.svg ~/.local/share/icons/ACYLS/scalable/apps/java26-openjdk.svg
+
 ```
 
 ---
