@@ -91,9 +91,39 @@ Additional desktop environments and icon transformation strategies may be added 
 
 ## Installation
 
-### Arch Linux / AUR
+### Environment & Target Theme Setup (Arch Linux)
 
-Once the AUR package is available:
+Before running IconShift with the default ACYLS theme, ensure the base build dependencies, AUR helper, and the ACYLS icon theme are installed:
+
+1. **Install base development tools and AUR helper (`yay`):**
+   ```bash
+   sudo pacman -S --needed base-devel git
+   git clone https://aur.archlinux.org/yay.git
+   cd yay && makepkg -si && cd ..
+   ```
+
+2. **Install the ACYLS icon theme from AUR:**
+   ```bash
+   yay -S acyls-icon-theme-git
+   ```
+
+3. **Verify installed icon themes:**
+   ```bash
+   find /usr/share/icons ~/.icons ~/.local/share/icons -maxdepth 2 -name "index.theme" 2>/dev/null | awk -F'/' '{print $(NF-1)}' | sort -u
+   ```
+
+4. **Inspect and activate ACYLS in GNOME:**
+   ```bash
+   # Check currently active theme
+   gsettings get org.gnome.desktop.interface icon-theme
+
+   # Set active theme to ACYLS
+   gsettings set org.gnome.desktop.interface icon-theme 'ACYLS'
+   ```
+
+### Arch Linux / AUR Package
+
+Once the AUR package is published:
 
 ```bash
 yay -S iconshift
@@ -107,7 +137,7 @@ iconshift --help
 
 ### Binary Release
 
-Precompiled binaries can be obtained from the project's GitHub Releases.
+Precompiled standalone binaries can be obtained from the project's GitHub Releases.
 
 After installation, IconShift can be invoked directly:
 
@@ -117,21 +147,32 @@ iconshift --version
 
 ### Running from Source
 
-IconShift uses `uv` for Python project and dependency management.
+IconShift uses `uv` for fast Python packaging and dependency management.
 
-Clone the repository and synchronize the environment:
+1. **Install `uv`:**
+   - On Arch Linux via pacman:
+     ```bash
+     sudo pacman -S uv
+     ```
+   - Or via the official installer:
+     ```bash
+     curl -LsSf https://astral.sh/uv/install.sh | sh
+     ```
 
-```bash
-git clone https://github.com/palonza/iconshift.git
-cd iconshift
-uv sync
-```
+2. **Clone the repository and synchronize the environment:**
+   ```bash
+   # HTTPS
+   git clone https://github.com/palonza/iconshift.git
+   # or SSH: git clone git@github.com:palonza/iconshift.git
 
-You can then execute IconShift without installing it globally:
+   cd iconshift
+   uv sync
+   ```
 
-```bash
-uv run iconshift --help
-```
+3. **Execute directly:**
+   ```bash
+   uv run iconshift --help
+   ```
 
 ---
 
@@ -225,10 +266,36 @@ iconshift generate --all --dry-run
 
 ### Generate all missing icons
 
-IconShift can automatically use the palette detected for the target theme:
+IconShift automatically uses the adaptive palette detected for the target theme:
 
 ```bash
 iconshift generate --all
+```
+
+### Force Regeneration
+
+Regenerate and overwrite existing icons:
+
+```bash
+iconshift generate --all --force
+```
+
+### Color Transformation Modes
+
+IconShift defaults to an **adaptive dominant** coloring strategy: identifying the primary visual container/background shape (mapping it to the theme's primary silver `#A0A0A0`) and contrasting glyphs/controls/emblems (mapping them to dark graphite `#404040`).
+
+```bash
+# Adaptive mode (default)
+iconshift generate --all --adaptive
+
+# Single-tone flat monochrome
+iconshift generate --all --monochrome
+
+# Custom two-tone with explicit colors
+iconshift generate --all \
+  --color "#A0A0A0" \
+  --secondary-color "#404040" \
+  --two-tone
 ```
 
 ### Generate a specific icon
@@ -249,15 +316,6 @@ iconshift generate --file /usr/share/icons/hicolor/scalable/apps/vlc.svg
 iconshift generate --icon org.gnome.Snapshot --color "#00FFCC"
 ```
 
-### Two-tone transformation
-
-```bash
-iconshift generate --all \
-  --color "#D0D0D0" \
-  --secondary-color "#303030" \
-  --two-tone
-```
-
 ### Custom output directory
 
 ```bash
@@ -266,7 +324,15 @@ iconshift generate --all --output-dir ~/my-icon-theme/
 
 ### Unix pipelines
 
-The output of `scan` can be passed directly to `generate`:
+The output of `scan` can be piped directly into `generate`.
+
+Preview a small batch with `head` and `--dry-run`:
+
+```bash
+iconshift scan --missing --format paths | head -n 3 | iconshift generate - --dry-run
+```
+
+Generate all scanned missing icons via pipe:
 
 ```bash
 iconshift scan --missing --format paths | iconshift generate -
@@ -290,21 +356,29 @@ iconshift palette --theme ACYLS --limit 30
 
 ---
 
-## GNOME Integration
+## Desktop Integration
 
-By default, generated icons can be placed under:
+By default, generated icons are placed under:
 
 ```text
 ~/.local/share/icons/ACYLS/scalable/apps/
 ```
 
-When supported by the installed environment, the icon-theme cache can be refreshed with:
+Refresh the icon cache:
 
 ```bash
+# User-level cache (no sudo required):
 gtk-update-icon-cache -f ~/.local/share/icons/ACYLS
+
+# Or system-level cache:
+sudo gtk-update-icon-cache -f /usr/share/icons/ACYLS
 ```
 
-If the desktop environment does not immediately reflect the changes, reloading or reapplying the active icon theme may be necessary.
+If the desktop environment does not immediately reflect the changes, reload or reapply the active icon theme:
+
+```bash
+gsettings set org.gnome.desktop.interface icon-theme 'ACYLS'
+```
 
 ---
 

@@ -108,8 +108,9 @@ def test_resolver_chain_all_links(mock_env):
 
 
 def test_resolver_aliases(mock_env):
-    # In mock_env, ACYLS exists in icon_dirs[1] (usr/share/icons).
-    pref_svg = mock_env["icon_dirs"][1] / "ACYLS/scalable/apps/preferences-system.svg"
+    # In mock_env, adwaita has preferences-system.svg
+    adwaita_apps = mock_env["icon_dirs"][1] / "adwaita/scalable/apps"
+    pref_svg = adwaita_apps / "preferences-system.svg"
     pref_svg.write_text('<svg viewBox="0 0 16 16"/>', encoding="utf-8")
 
     resolver = IconResolver(
@@ -119,9 +120,11 @@ def test_resolver_aliases(mock_env):
         opt_dirs=mock_env["opt_dirs"],
     )
 
-    # Resolving org.gnome.Settings should resolve via preferences-system alias in ACYLS!
+    # Resolving org.gnome.Settings should resolve via preferences-system alias in adwaita (inherited)!
     res = resolver.resolve("org.gnome.Settings")
-    assert res.is_in_target_theme is True
-    assert res.source == ResolutionSource.TARGET_THEME
+    assert res.is_in_target_theme is False
+    assert res.is_missing_in_target is True
+    assert res.source == ResolutionSource.INHERITED_THEME
     assert res.resolved_path == pref_svg
+
 

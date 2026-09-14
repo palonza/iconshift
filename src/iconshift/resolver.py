@@ -274,19 +274,17 @@ class TargetThemeLink(ResolutionLink):
         self.theme_dirs = theme_reader.get_theme_paths(theme_name)
 
     def try_resolve(self, icon_name: str) -> ResolvedIcon | None:
-        candidates = get_icon_name_candidates(icon_name)
-        for cand in candidates:
-            for theme_dir in self.theme_dirs:
-                found = find_icon_in_directory(theme_dir, cand)
-                if found is not None:
-                    fmt = found.suffix.lstrip(".").lower()
-                    return ResolvedIcon(
-                        icon_name=icon_name,
-                        source=ResolutionSource.TARGET_THEME,
-                        source_theme=self.theme_name,
-                        resolved_path=found,
-                        format=fmt,
-                    )
+        for theme_dir in self.theme_dirs:
+            found = find_icon_in_directory(theme_dir, icon_name)
+            if found is not None:
+                fmt = found.suffix.lstrip(".").lower()
+                return ResolvedIcon(
+                    icon_name=icon_name,
+                    source=ResolutionSource.TARGET_THEME,
+                    source_theme=self.theme_name,
+                    resolved_path=found,
+                    format=fmt,
+                )
         return None
 
 

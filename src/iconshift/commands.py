@@ -271,6 +271,20 @@ class GenerateCommand:
         total = len(targets_to_generate)
         action = "Simulated" if self.dry_run else "Generated"
         print(f"\n{action} {success_count}/{total} icons.")
+
+        if not self.dry_run and success_count > 0:
+            try:
+                theme_root = self.output_dir.parent.parent
+                if theme_root.parent.name == "icons" and not (theme_root / "index.theme").exists():
+                    meta = self.resolver.theme_reader.read_metadata(self.theme)
+                    for t_dir in meta.theme_dirs:
+                        sys_index = t_dir / "index.theme"
+                        if sys_index.is_file():
+                            (theme_root / "index.theme").symlink_to(sys_index)
+                            break
+            except Exception:
+                pass
+
         return 0 if success_count == total else 1
 
 
